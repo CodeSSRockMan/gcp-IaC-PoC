@@ -1,0 +1,9 @@
+# Terraform sensitive files
+*.tfstate
+*.tfstate.backup
+.terraform/
+terraform.tfvars
+*.zip
+*.pem
+*.key
+*.env
