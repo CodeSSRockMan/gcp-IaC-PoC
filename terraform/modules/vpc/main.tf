@@ -27,6 +27,33 @@ resource "google_compute_firewall" "allow_ssh" {
   target_tags   = ["ssh-access"]
 }
 
+# Allow only API service to access resources (example: allow HTTP from API subnet)
+resource "google_compute_firewall" "allow_api_to_resource" {
+  name    = "allow-api-to-resource"
+  network = google_compute_network.vpc_network.name
+
+  allow {
+    protocol = "tcp"
+    ports    = ["80", "443"] # Adjust as needed
+  }
+
+  source_ranges = [var.api_subnet_cidr] # Pass API subnet CIDR as a variable
+  target_tags   = ["resource-access"]
+}
+
+# Deny all other ingress except SSH and API
+resource "google_compute_firewall" "deny_all_ingress" {
+  name    = "deny-all-ingress"
+  network = google_compute_network.vpc_network.name
+
+  deny {
+    protocol = "all"
+  }
+
+  priority      = 65534
+  source_ranges = ["0.0.0.0/0"]
+}
+
 output "vpc_id" {
   value = google_compute_network.vpc_network.id
 }

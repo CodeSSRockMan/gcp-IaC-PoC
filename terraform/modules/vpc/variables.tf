@@ -17,3 +17,8 @@ variable "region" {
   description = "GCP region"
   type        = string
 }
+
+variable "api_subnet_cidr" {
+  description = "CIDR range for the API service subnet allowed to access resources"
+  type        = string
+}
