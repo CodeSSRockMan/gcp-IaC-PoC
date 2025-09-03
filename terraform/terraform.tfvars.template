@@ -1,0 +1,17 @@
+# Example terraform.tfvars template
+# Copy this file to terraform.tfvars and fill in your values
+
+# GCP Project Configuration
+project_id = "your-gcp-project-id"
+region = "us-central1"
+billing_account_id = "your-billing-account-id"
+
+# Cloud Run Services Configuration
+cloud_run_name = "main-service"
+cloud_run_image = "python:3.12-alpine"
+
+# OpenStack-equivalent Services
+entry_image = "python:3.12-alpine"
+compute_image = "python:3.12-alpine"
+api_image = "python:3.12-alpine"
+nova_image = "python:3.12-alpine"

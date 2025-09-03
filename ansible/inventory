@@ -1,0 +1,7 @@
+[local]
+localhost ansible_connection=local
+
+[cloud_run]
+entry ansible_host={{ cloud_run_entry_url }}
+api ansible_host={{ cloud_run_api_url }}
+compute ansible_host={{ cloud_run_compute_url }}

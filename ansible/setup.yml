@@ -1,0 +1,46 @@
+---
+- name: Setup OpenStack-equivalent services
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  tasks:
+    - name: Configure entry service
+      uri:
+        url: "{{ cloud_run_entry_url }}/configure"
+        method: POST
+        body_format: json
+        body:
+          role: "entry"
+          api_endpoint: "{{ cloud_run_api_url }}"
+          compute_endpoint: "{{ cloud_run_compute_url }}"
+      register: entry_config
+
+    - name: Configure API service
+      uri:
+        url: "{{ cloud_run_api_url }}/configure"
+        method: POST
+        body_format: json
+        body:
+          role: "api"
+          compute_endpoint: "{{ cloud_run_compute_url }}"
+          storage_bucket: "{{ swift_equivalent_bucket_name }}"
+      register: api_config
+
+    - name: Configure compute service
+      uri:
+        url: "{{ cloud_run_compute_url }}/configure"
+        method: POST
+        body_format: json
+        body:
+          role: "compute"
+          firestore_db: "{{ firestore_database_id }}"
+      register: compute_config
+
+    - name: Verify all services are responding
+      uri:
+        url: "{{ item }}/health"
+        method: GET
+      loop:
+        - "{{ cloud_run_entry_url }}"
+        - "{{ cloud_run_api_url }}"
+        - "{{ cloud_run_compute_url }}"

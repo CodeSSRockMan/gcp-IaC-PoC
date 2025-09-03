@@ -156,29 +156,6 @@ module "cloud_run_api" {
   service_account_email = google_service_account.cloud_run_sa.email
 }
 
-resource "google_billing_budget" "project_budget" {
-  billing_account = var.billing_account_id
-  display_name    = "Project Budget"
-  amount {
-    specified_amount {
-      currency_code = "USD"
-      units         = 10
-    }
-  }
-  budget_filter {
-    projects = ["projects/${var.project_id}"]
-  }
-  threshold_rules {
-    threshold_percent = 0.5
-  }
-  threshold_rules {
-    threshold_percent = 0.9
-  }
-  threshold_rules {
-    threshold_percent = 1.0
-  }
-}
-
 # Only allow API service to access resources (firewall rules would be in each VPC module)
 
 # OpenStack Neutron equivalent (Networking)
@@ -210,32 +187,4 @@ resource "google_compute_disk" "cinder_equivalent" {
   size  = 10 # 10GB
 }
 
-output "cloud_run_url" {
-  value       = module.cloud_run.url
-  description = "Cloud Run service URL"
-}
-
-output "firestore_database_id" {
-  value       = module.firestore.database_id
-  description = "Firestore database ID"
-}
-
-output "swift_equivalent_bucket_name" {
-  value       = google_storage_bucket.swift_equivalent.name
-  description = "Cloud Storage bucket name (OpenStack Swift equivalent)"
-}
-
-output "neutron_network_id" {
-  value       = module.neutron_network.vpc_id
-  description = "VPC network ID (OpenStack Neutron equivalent)"
-}
-
-output "nova_compute_url" {
-  value       = module.nova_compute.url
-  description = "Cloud Run service URL (OpenStack Nova equivalent)"
-}
-
-output "cinder_equivalent_disk_name" {
-  value       = google_compute_disk.cinder_equivalent.name
-  description = "Persistent Disk name (OpenStack Cinder equivalent)"
-}
+# Only allow API service to access resources (firewall rules would be in each VPC module)

@@ -1,0 +1,57 @@
+---
+- name: Health check for OpenStack-equivalent services
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  tasks:
+    - name: Check entry service health
+      uri:
+        url: "{{ cloud_run_entry_url }}/health"
+        method: GET
+        status_code: 200
+      register: entry_health
+
+    - name: Check API service health
+      uri:
+        url: "{{ cloud_run_api_url }}/health"
+        method: GET
+        status_code: 200
+      register: api_health
+
+    - name: Check compute service health
+      uri:
+        url: "{{ cloud_run_compute_url }}/health"
+        method: GET
+        status_code: 200
+      register: compute_health
+
+    - name: Test entry to API communication
+      uri:
+        url: "{{ cloud_run_entry_url }}/test-api"
+        method: GET
+        status_code: 200
+      register: entry_api_test
+
+    - name: Test API to compute communication
+      uri:
+        url: "{{ cloud_run_api_url }}/test-compute"
+        method: GET
+        status_code: 200
+      register: api_compute_test
+
+    - name: Generate health report
+      template:
+        src: health-report.html.j2
+        dest: ../reports/health-check.html
+      vars:
+        timestamp: "{{ ansible_date_time.iso8601 }}"
+        services:
+          - name: "Entry Service"
+            status: "{{ 'OK' if entry_health.status == 200 else 'FAIL' }}"
+            url: "{{ cloud_run_entry_url }}"
+          - name: "API Service"
+            status: "{{ 'OK' if api_health.status == 200 else 'FAIL' }}"
+            url: "{{ cloud_run_api_url }}"
+          - name: "Compute Service"
+            status: "{{ 'OK' if compute_health.status == 200 else 'FAIL' }}"
+            url: "{{ cloud_run_compute_url }}"

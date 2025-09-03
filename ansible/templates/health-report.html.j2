@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Infrastructure Health Check Report</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .header { background: #f4f4f4; padding: 10px; border-radius: 5px; }
+        .service { margin: 10px 0; padding: 10px; border-left: 4px solid #ddd; }
+        .ok { border-left-color: #4CAF50; background: #f1f8e9; }
+        .fail { border-left-color: #f44336; background: #ffebee; }
+        .status { font-weight: bold; }
+        .timestamp { color: #666; font-size: 0.9em; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Infrastructure Health Check Report</h1>
+        <p class="timestamp">Generated: {{ timestamp }}</p>
+    </div>
+    
+    {% for service in services %}
+    <div class="service {{ 'ok' if service.status == 'OK' else 'fail' }}">
+        <h3>{{ service.name }}</h3>
+        <p>Status: <span class="status">{{ service.status }}</span></p>
+        <p>URL: <a href="{{ service.url }}">{{ service.url }}</a></p>
+    </div>
+    {% endfor %}
+</body>
+</html>

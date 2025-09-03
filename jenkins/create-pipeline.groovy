@@ -1,8 +1,8 @@
-// Jenkins pipeline definition
+// Infrastructure Creation Pipeline
 pipeline {
     agent any
     environment {
-        GOOGLE_APPLICATION_CREDENTIALS = credentials('gcp-sa-key') // Jenkins secret with GCP service account JSON
+        GOOGLE_APPLICATION_CREDENTIALS = credentials('gcp-sa-key')
     }
     stages {
         stage('Checkout') {
@@ -26,10 +26,15 @@ pipeline {
         }
         stage('Terraform Apply') {
             steps {
-                input 'Approve apply?'
+                input 'Approve infrastructure creation?'
                 dir('terraform') {
                     sh 'terraform apply -auto-approve tfplan'
                 }
+            }
+        }
+        stage('Run Ansible Setup') {
+            steps {
+                sh 'ansible-playbook ansible/setup.yml -i ansible/inventory'
             }
         }
     }
