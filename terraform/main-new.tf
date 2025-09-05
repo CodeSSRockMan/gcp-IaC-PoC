@@ -222,24 +222,23 @@ resource "google_cloud_run_service_iam_member" "allow_unauthenticated" {
 
 # Cloud Monitoring notification channel
 resource "google_monitoring_notification_channel" "email" {
-  display_name = "Medical Appointments Admin"
+  display_name = "Email Notification Channel"
   type         = "email"
   labels = {
-    email_address = "admin@example.com" # Update with your email
+    email_address = "admin@example.com" # Change this to your email
   }
 }
 
-# CPU Utilization Alert
+# Cloud Monitoring alerts for the instance
 resource "google_monitoring_alert_policy" "high_cpu" {
-  display_name = "High CPU Usage Alert"
+  display_name = "High CPU Usage"
   combiner     = "OR"
-  enabled      = true
   
   conditions {
-    display_name = "VM Instance - CPU utilization > 80%"
+    display_name = "VM Instance - CPU utilization"
     
     condition_threshold {
-      filter         = "resource.type=\"gce_instance\" AND resource.labels.instance_id=\"${google_compute_instance.app_instance.instance_id}\""
+      filter         = "resource.type=\"gce_instance\""
       comparison     = "COMPARISON_GT"
       threshold_value = 0.8
       duration       = "300s"
@@ -254,19 +253,17 @@ resource "google_monitoring_alert_policy" "high_cpu" {
   notification_channels = [google_monitoring_notification_channel.email.id]
 }
 
-# Memory Utilization Alert
 resource "google_monitoring_alert_policy" "high_memory" {
-  display_name = "High Memory Usage Alert"
+  display_name = "High Memory Usage"
   combiner     = "OR"
-  enabled      = true
   
   conditions {
-    display_name = "VM Instance - Memory utilization > 85%"
+    display_name = "VM Instance - Memory utilization"
     
     condition_threshold {
-      filter         = "resource.type=\"gce_instance\" AND resource.labels.instance_id=\"${google_compute_instance.app_instance.instance_id}\""
+      filter         = "resource.type=\"gce_instance\""
       comparison     = "COMPARISON_GT"
-      threshold_value = 0.85
+      threshold_value = 0.8
       duration       = "300s"
       
       aggregations {
@@ -277,107 +274,6 @@ resource "google_monitoring_alert_policy" "high_memory" {
   }
   
   notification_channels = [google_monitoring_notification_channel.email.id]
-}
-
-# Disk I/O Alert
-resource "google_monitoring_alert_policy" "high_disk_io" {
-  display_name = "High Disk I/O Alert"
-  combiner     = "OR"
-  enabled      = true
-  
-  conditions {
-    display_name = "VM Instance - Disk Read Operations > 1000/min"
-    
-    condition_threshold {
-      filter         = "resource.type=\"gce_instance\" AND resource.labels.instance_id=\"${google_compute_instance.app_instance.instance_id}\""
-      comparison     = "COMPARISON_GT"
-      threshold_value = 1000
-      duration       = "300s"
-      
-      aggregations {
-        alignment_period   = "60s"
-        per_series_aligner = "ALIGN_RATE"
-      }
-    }
-  }
-  
-  notification_channels = [google_monitoring_notification_channel.email.id]
-}
-
-# Network Throughput Alert
-resource "google_monitoring_alert_policy" "high_network" {
-  display_name = "High Network Throughput Alert"
-  combiner     = "OR"
-  enabled      = true
-  
-  conditions {
-    display_name = "VM Instance - Network sent bytes > 100MB/min"
-    
-    condition_threshold {
-      filter         = "resource.type=\"gce_instance\" AND resource.labels.instance_id=\"${google_compute_instance.app_instance.instance_id}\""
-      comparison     = "COMPARISON_GT"
-      threshold_value = 104857600  # 100MB in bytes
-      duration       = "300s"
-      
-      aggregations {
-        alignment_period   = "60s"
-        per_series_aligner = "ALIGN_RATE"
-      }
-    }
-  }
-  
-  notification_channels = [google_monitoring_notification_channel.email.id]
-}
-
-# Monitoring Dashboard
-resource "google_monitoring_dashboard" "medical_appointments_dashboard" {
-  dashboard_json = jsonencode({
-    displayName = "Medical Appointments Infrastructure"
-    mosaicLayout = {
-      tiles = [
-        {
-          width = 6
-          height = 4
-          widget = {
-            title = "CPU Utilization"
-            xyChart = {
-              dataSets = [{
-                timeSeriesQuery = {
-                  timeSeriesFilter = {
-                    filter = "resource.type=\"gce_instance\" AND resource.labels.instance_id=\"${google_compute_instance.app_instance.instance_id}\""
-                    aggregation = {
-                      alignmentPeriod = "60s"
-                      perSeriesAligner = "ALIGN_MEAN"
-                    }
-                  }
-                }
-              }]
-            }
-          }
-        },
-        {
-          width = 6
-          height = 4
-          widget = {
-            title = "Memory Usage"
-            xyChart = {
-              dataSets = [{
-                timeSeriesQuery = {
-                  timeSeriesFilter = {
-                    filter = "resource.type=\"gce_instance\" AND resource.labels.instance_id=\"${google_compute_instance.app_instance.instance_id}\""
-                    aggregation = {
-                      alignmentPeriod = "60s"
-                      perSeriesAligner = "ALIGN_MEAN"
-                    }
-                  }
-                }
-              }]
-            }
-          }
-        }
-      ]
-    }
-  })
 }
 
 # Webhooks for automated deployments
@@ -424,65 +320,4 @@ resource "google_cloudbuild_trigger" "app_deployment" {
       ]
     }
   }
-}
-
-# Webhook trigger for GitHub repository
-resource "google_cloudbuild_trigger" "webhook_deployment" {
-  name        = "medical-appointments-webhook"
-  description = "Webhook trigger for automated medical appointments deployment"
-
-  webhook_config {
-    secret = "your-webhook-secret-key" # Change this to a secure secret
-  }
-
-  build {
-    step {
-      name = "gcr.io/cloud-builders/git"
-      args = ["clone", "https://github.com/your-github-username/your-repo-name.git", "."]
-    }
-
-    step {
-      name = "gcr.io/cloud-builders/docker"
-      args = [
-        "build",
-        "-t", "gcr.io/${var.project_id}/medical-appointments:$BUILD_ID",
-        "-t", "gcr.io/${var.project_id}/medical-appointments:latest",
-        "./apps/medical-appointments"
-      ]
-    }
-
-    step {
-      name = "gcr.io/cloud-builders/docker"
-      args = ["push", "--all-tags", "gcr.io/${var.project_id}/medical-appointments"]
-    }
-
-    step {
-      name = "gcr.io/cloud-builders/gcloud"
-      args = [
-        "run", "deploy", "medical-appointments-api",
-        "--image", "gcr.io/${var.project_id}/medical-appointments:$BUILD_ID",
-        "--region", var.region,
-        "--platform", "managed",
-        "--allow-unauthenticated"
-      ]
-    }
-
-    step {
-      name = "gcr.io/cloud-builders/gcloud"
-      args = [
-        "compute", "instances", "reset", 
-        google_compute_instance.app_instance.name,
-        "--zone", var.zone
-      ]
-    }
-  }
-
-  depends_on = [google_cloud_run_service.medical_appointments]
-}
-
-# Service for easy app replacement
-resource "google_storage_bucket_object" "app_template" {
-  name   = "app-templates/medical-appointments-template.zip"
-  bucket = google_storage_bucket.app_storage.name
-  source = "../apps/medical-appointments/"  # This would be a zip file in real usage
 }

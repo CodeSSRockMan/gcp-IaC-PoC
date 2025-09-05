@@ -1,46 +1,121 @@
 ---
-- name: Setup OpenStack-equivalent services
+- name: Setup Python App Infrastructure
   hosts: localhost
   connection: local
   gather_facts: no
+  vars:
+    app_endpoints:
+      entry: "{{ cloud_run_entry_url }}"
+      api: "{{ cloud_run_api_url }}"
+      compute: "{{ cloud_run_compute_url }}"
+  
   tasks:
-    - name: Configure entry service
-      uri:
-        url: "{{ cloud_run_entry_url }}/configure"
-        method: POST
-        body_format: json
-        body:
-          role: "entry"
-          api_endpoint: "{{ cloud_run_api_url }}"
-          compute_endpoint: "{{ cloud_run_compute_url }}"
-      register: entry_config
-
-    - name: Configure API service
-      uri:
-        url: "{{ cloud_run_api_url }}/configure"
-        method: POST
-        body_format: json
-        body:
-          role: "api"
-          compute_endpoint: "{{ cloud_run_compute_url }}"
-          storage_bucket: "{{ swift_equivalent_bucket_name }}"
-      register: api_config
-
-    - name: Configure compute service
-      uri:
-        url: "{{ cloud_run_compute_url }}/configure"
-        method: POST
-        body_format: json
-        body:
-          role: "compute"
-          firestore_db: "{{ firestore_database_id }}"
-      register: compute_config
-
-    - name: Verify all services are responding
+    - name: Wait for all services to be ready
       uri:
         url: "{{ item }}/health"
         method: GET
+        status_code: 200
+      retries: 30
+      delay: 10
       loop:
-        - "{{ cloud_run_entry_url }}"
-        - "{{ cloud_run_api_url }}"
-        - "{{ cloud_run_compute_url }}"
+        - "{{ app_endpoints.entry }}"
+        - "{{ app_endpoints.api }}"
+        - "{{ app_endpoints.compute }}"
+
+    - name: Configure entry service (gateway)
+      uri:
+        url: "{{ app_endpoints.entry }}/configure"
+        method: POST
+        body_format: json
+        body:
+          api_endpoint: "{{ app_endpoints.api }}"
+          compute_endpoint: "{{ app_endpoints.compute }}"
+      register: entry_config
+      
+    - name: Configure API service (controller)
+      uri:
+        url: "{{ app_endpoints.api }}/configure"
+        method: POST
+        body_format: json
+        body:
+          compute_endpoint: "{{ app_endpoints.compute }}"
+          storage_bucket: "{{ swift_equivalent_bucket_name }}"
+          firestore_db: "{{ firestore_database_id }}"
+      register: api_config
+
+    - name: Deploy Python app to compute service
+      uri:
+        url: "{{ app_endpoints.compute }}/deploy"
+        method: POST
+        body_format: json
+        body:
+          app_type: "python_web_app"
+          storage_bucket: "{{ swift_equivalent_bucket_name }}"
+          database: "{{ firestore_database_id }}"
+          auto_scale: true
+          max_instances: 10
+      register: app_deploy
+
+    - name: Configure compute service
+      uri:
+        url: "{{ app_endpoints.compute }}/configure"
+        method: POST
+        body_format: json
+        body:
+          storage_bucket: "{{ swift_equivalent_bucket_name }}"
+          database: "{{ firestore_database_id }}"
+      register: compute_config
+
+    - name: Test complete request flow
+      uri:
+        url: "{{ app_endpoints.entry }}/app"
+        method: GET
+        status_code: [200, 503]  # 503 acceptable during startup
+      register: flow_test
+      
+    - name: Test API status endpoint
+      uri:
+        url: "{{ app_endpoints.entry }}/api/status"
+        method: GET
+        status_code: 200
+      register: api_status_test
+      
+    - name: Display setup results
+      debug:
+        msg: |
+          🚀 Python App Infrastructure Deployed Successfully!
+          
+          📍 Access Your Application:
+          - Main Application: {{ app_endpoints.entry }}/app
+          - Gateway Interface: {{ app_endpoints.entry }}
+          - App Management: {{ app_endpoints.compute }}/apps
+          - System Status: {{ app_endpoints.entry }}/status
+          - Shell Access: {{ app_endpoints.entry }}/shell
+          - API Dashboard: {{ app_endpoints.entry }}/api/status
+          
+          🎯 Deploy Your Python App (3 Options):
+          1. Direct Integration: Edit services/compute-service.py
+          2. External App: {{ app_endpoints.compute }}/load-app-form
+          3. Script: ./configure-external-app.sh
+          
+          📊 Service Configuration:
+          - Entry Service: {{ entry_config.json.status | default('configured') }}
+          - API Service: {{ api_config.json.status | default('configured') }}
+          - Compute Service: {{ app_deploy.json.status | default('deployed') }}
+          
+          🔗 Service Endpoints:
+          - Entry: {{ app_endpoints.entry }}
+          - API: {{ app_endpoints.api }}
+          - Compute: {{ app_endpoints.compute }}
+          
+          📦 GCP Resources:
+          - Storage Bucket: {{ swift_equivalent_bucket_name }}
+          - Firestore DB: {{ firestore_database_id }}
+          
+          ⚡ Auto-scaling Features:
+          - Scales 0-10 instances automatically
+          - Pay only for usage (scales to zero when idle)
+          - Built-in load balancing & health monitoring
+          - Free tier optimized (1 vCPU, 512MB per instance)
+          
+          🎉 Ready! Visit {{ app_endpoints.entry }} to start using your Python app infrastructure!

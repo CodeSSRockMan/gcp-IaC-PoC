@@ -245,7 +245,7 @@ def api_status():
         'gateway': {'status': 'ok', 'service': 'entry'},
         'api': {'status': 'unknown'},
         'compute': {'status': 'unknown'},
-        'timestamp': datetime.now().isoformat()
+        'timestamp': datetime.now().isoformat() if 'datetime' in globals() else 'unknown'
     }
     
     # Check API service
@@ -413,3 +413,188 @@ def system_status():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8082))
     app.run(host='0.0.0.0', port=port, debug=False)
+        # Forward request to compute service (your app)
+        url = f"{API_ENDPOINT}/app/{path}" if path else f"{API_ENDPOINT}/app"
+        
+        if request.method == 'GET':
+            response = requests.get(url, params=request.args, timeout=30)
+        else:
+            response = requests.request(
+                request.method, 
+                url, 
+                json=request.json,
+                data=request.form,
+                files=request.files,
+                timeout=30
+            )
+        
+        # Return the response from your app
+        if response.headers.get('content-type', '').startswith('text/html'):
+            return response.text, response.status_code
+        else:
+            return jsonify(response.json()), response.status_code
+            
+    except requests.exceptions.RequestException as e:
+        return render_template_string("""
+        <html>
+        <body style="font-family: Arial; margin: 40px; text-align: center;">
+            <h1>🚧 App Starting Up</h1>
+            <p>Your Python app is initializing. Please wait a moment and refresh.</p>
+            <a href="/" style="color: #4285f4;">← Back to Gateway</a>
+            <br><br>
+            <small>Error: {{ error }}</small>
+        </body>
+        </html>
+        """, error=str(e))
+
+@app.route('/shell')
+def shell():
+    """Shell interface for system access"""
+    return render_template_string("""
+    <html>
+    <head>
+        <title>Shell Access</title>
+        <style>
+            body { font-family: 'Courier New', monospace; margin: 20px; background: #1e1e1e; color: #00ff00; }
+            .terminal { background: #000; padding: 20px; border-radius: 5px; min-height: 400px; }
+            .prompt { color: #00ff00; }
+            .output { color: #ffffff; margin: 10px 0; }
+            input[type="text"] { background: transparent; border: none; color: #00ff00; font-family: 'Courier New'; width: 70%; }
+            .btn { background: #333; color: #00ff00; border: 1px solid #00ff00; padding: 5px 15px; }
+        </style>
+    </head>
+    <body>
+        <h1>🖥️ Shell Access (Jumphost)</h1>
+        <a href="/" style="color: #4285f4;">← Back to Gateway</a>
+        
+        <div class="terminal">
+            <div class="prompt">user@python-app-gateway:~$ </div>
+            <div id="output"></div>
+            
+            <form onsubmit="executeCommand(event)">
+                <span class="prompt">user@python-app-gateway:~$ </span>
+                <input type="text" id="command" placeholder="Enter command (status, uptime, ps, app-stats)" autofocus>
+                <input type="submit" value="Execute" class="btn">
+            </form>
+        </div>
+        
+        <script>
+        function executeCommand(event) {
+            event.preventDefault();
+            const command = document.getElementById('command').value;
+            const output = document.getElementById('output');
+            
+            // Add command to output
+            output.innerHTML += '<div class="output">user@python-app-gateway:~$ ' + command + '</div>';
+            
+            // Execute via API
+            fetch('/execute', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({command: command})
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.output) {
+                    output.innerHTML += '<div class="output">' + data.output.replace(/\\n/g, '<br>') + '</div>';
+                } else if (data.result) {
+                    output.innerHTML += '<div class="output">' + JSON.stringify(data.result, null, 2) + '</div>';
+                } else if (data.error) {
+                    output.innerHTML += '<div class="output" style="color: #ff6b6b;">Error: ' + data.error + '</div>';
+                }
+                output.scrollTop = output.scrollHeight;
+            })
+            .catch(err => {
+                output.innerHTML += '<div class="output" style="color: #ff6b6b;">Network error: ' + err + '</div>';
+            });
+            
+            document.getElementById('command').value = '';
+        }
+        </script>
+    </body>
+    </html>
+    """)
+
+@app.route('/execute', methods=['POST'])
+def execute():
+    """Execute commands through API service"""
+    command = request.json.get('command', '').strip()
+    
+    # Basic gateway commands
+    if command == 'status':
+        return jsonify({'result': {'gateway': 'running', 'api_endpoint': API_ENDPOINT}})
+    elif command == 'help':
+        return jsonify({'result': 'Available: status, uptime, ps, app-stats, help'})
+    
+    # Forward other commands to API service
+    try:
+        response = requests.post(f"{API_ENDPOINT}/execute", 
+                               json={'command': command, 'source': 'gateway'},
+                               headers={'X-Forwarded-From': 'entry-service'},
+                               timeout=10)
+        return jsonify(response.json())
+    except Exception as e:
+        return jsonify({'error': f'Cannot reach backend: {str(e)}'})
+
+@app.route('/status')
+def system_status():
+    """System status page"""
+    try:
+        # Check API service
+        api_response = requests.get(f"{API_ENDPOINT}/health", timeout=5)
+        api_status = "🟢 Online" if api_response.status_code == 200 else "🔴 Offline"
+        
+        # Check app status
+        app_response = requests.get(f"{API_ENDPOINT}/app/api/status", timeout=5)
+        app_status = "🟢 Running" if app_response.status_code == 200 else "🔴 Offline"
+        
+    except:
+        api_status = "🔴 Offline"
+        app_status = "🔴 Offline"
+    
+    return render_template_string("""
+    <html>
+    <head><title>System Status</title></head>
+    <body style="font-family: Arial; margin: 40px;">
+        <h1>📊 System Status</h1>
+        <a href="/" style="color: #4285f4;">← Back to Gateway</a>
+        
+        <div style="margin: 30px 0;">
+            <h3>Service Health:</h3>
+            <p><strong>Entry Gateway:</strong> 🟢 Online (you're here!)</p>
+            <p><strong>API Controller:</strong> {{ api_status }}</p>
+            <p><strong>Python App:</strong> {{ app_status }}</p>
+        </div>
+        
+        <div style="margin: 30px 0;">
+            <h3>Quick Actions:</h3>
+            <a href="/app" style="padding: 10px 20px; background: #4285f4; color: white; text-decoration: none; border-radius: 5px; margin: 5px;">Access App</a>
+            <a href="/shell" style="padding: 10px 20px; background: #34a853; color: white; text-decoration: none; border-radius: 5px; margin: 5px;">Open Shell</a>
+            <a href="/api/status" style="padding: 10px 20px; background: #fbbc04; color: black; text-decoration: none; border-radius: 5px; margin: 5px;">API Details</a>
+        </div>
+    </body>
+    </html>
+    """, api_status=api_status, app_status=app_status)
+
+@app.route('/api/<path:path>', methods=['GET', 'POST', 'PUT', 'DELETE'])
+def proxy_api(path):
+    """Proxy API requests"""
+    url = f"{API_ENDPOINT}/{path}"
+    headers = {'X-Forwarded-From': 'entry-service'}
+    
+    try:
+        if request.method == 'GET':
+            response = requests.get(url, headers=headers, params=request.args, timeout=10)
+        elif request.method == 'POST':
+            response = requests.post(url, headers=headers, json=request.json, timeout=10)
+        elif request.method == 'PUT':
+            response = requests.put(url, headers=headers, json=request.json, timeout=10)
+        elif request.method == 'DELETE':
+            response = requests.delete(url, headers=headers, timeout=10)
+        
+        return jsonify(response.json()) if response.content else '', response.status_code
+    except Exception as e:
+        return jsonify({'error': str(e)}), 503
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=8080)

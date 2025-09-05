@@ -1,11 +1,19 @@
-// Cloud Run module: deploys a service using free tier options
+// Cloud Run module: deploys a service with auto-scaling capabilities
 
 resource "google_cloud_run_service" "app" {
   name     = var.name
   location = var.region
 
   template {
+    metadata {
+      annotations = {
+        "autoscaling.knative.dev/minScale" = "0"    # Scale to zero when no traffic
+        "autoscaling.knative.dev/maxScale" = "10"   # Maximum 10 instances (free tier friendly)
+        "run.googleapis.com/cpu-throttling" = "true" # Enable CPU throttling for cost efficiency
+      }
+    }
     spec {
+      container_concurrency = 100  # Allow up to 100 concurrent requests per instance
       containers {
         image = var.image
         resources {
@@ -17,6 +25,14 @@ resource "google_cloud_run_service" "app" {
         env {
           name  = "FIRESTORE_PROJECT_ID"
           value = var.project_id
+        }
+        env {
+          name  = "GCP_PROJECT"
+          value = var.project_id
+        }
+        env {
+          name  = "AUTO_SCALE_ENABLED"
+          value = "true"
         }
       }
     }
