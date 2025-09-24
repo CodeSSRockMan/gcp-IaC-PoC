@@ -15,86 +15,35 @@ provider "google" {
   region  = var.region
 }
 
-# Variables
-variable "project_id" {
-  description = "GCP Project ID"
-  type        = string
+# VPC Module
+module "vpc" {
+  source = "./modules/vpc"
+
+  vpc_name            = "vnet-nebo"
+  public_subnet_name  = "snet-public"
+  private_subnet_name = "snet-private"
+  public_subnet_cidr  = "10.0.0.0/17"
+  private_subnet_cidr = "10.0.128.0/17"
+  region              = var.region
 }
 
-variable "region" {
-  description = "GCP region"
-  type        = string
-  default     = "us-central1"
-}
+# Firestore Module
+module "firestore" {
+  source = "./modules/firestore"
 
-variable "zone" {
-  description = "GCP zone"
-  type        = string
-  default     = "us-central1-a"
-}
-
-variable "ssh_key" {
-  description = "SSH public key for instance access"
-  type        = string
-}
-
-# VPC Network
-resource "google_compute_network" "vpc" {
-  name                    = "medical-appointments-vpc"
-  auto_create_subnetworks = false
-}
-
-resource "google_compute_subnetwork" "subnet" {
-  name          = "medical-appointments-subnet"
-  ip_cidr_range = "10.0.1.0/24"
-  region        = var.region
-  network       = google_compute_network.vpc.id
-}
-
-# Firewall rules
-resource "google_compute_firewall" "allow_ssh" {
-  name    = "allow-ssh"
-  network = google_compute_network.vpc.name
-
-  allow {
-    protocol = "tcp"
-    ports    = ["22"]
-  }
-
-  source_ranges = ["0.0.0.0/0"]
-  target_tags   = ["ssh-access"]
-}
-
-resource "google_compute_firewall" "allow_http" {
-  name    = "allow-http"
-  network = google_compute_network.vpc.name
-
-  allow {
-    protocol = "tcp"
-    ports    = ["80", "8080", "5000"]
-  }
-
-  source_ranges = ["0.0.0.0/0"]
-  target_tags   = ["http-access"]
-}
-
-# Firestore Database
-resource "google_firestore_database" "database" {
-  project     = var.project_id
-  name        = "(default)"
-  location_id = var.region
-  type        = "FIRESTORE_NATIVE"
+  project_id = var.project_id
+  region     = var.region
 }
 
 # Storage bucket for app deployments
 resource "google_storage_bucket" "app_storage" {
   name     = "${var.project_id}-medical-apps"
   location = var.region
-  
+
   versioning {
     enabled = true
   }
-  
+
   lifecycle_rule {
     condition {
       age = 30
@@ -129,13 +78,13 @@ resource "google_project_iam_member" "monitoring_writer" {
   member  = "serviceAccount:${google_service_account.app_service_account.email}"
 }
 
-# Compute Instance for hosting applications
-resource "google_compute_instance" "app_instance" {
-  name         = "medical-appointments-instance"
+# VM1 - Private subnet instance (not accessible from public hosts)
+resource "google_compute_instance" "vm1_private" {
+  name         = "vm1-private-instance"
   machine_type = "e2-micro" # Free tier eligible
   zone         = var.zone
 
-  tags = ["ssh-access", "http-access"]
+  tags = ["ssh-access", "private-vm"]
 
   boot_disk {
     initialize_params {
@@ -146,11 +95,45 @@ resource "google_compute_instance" "app_instance" {
   }
 
   network_interface {
-    network    = google_compute_network.vpc.id
-    subnetwork = google_compute_subnetwork.subnet.id
-    
+    network    = module.vpc.vpc_id
+    subnetwork = module.vpc.private_subnet_id
+    # No access_config = No public IP (not accessible from internet)
+  }
+
+  metadata = {
+    ssh-keys = "ubuntu:${var.ssh_key}"
+  }
+
+  metadata_startup_script = file("${path.module}/startup-script.sh")
+
+  service_account {
+    email  = google_service_account.app_service_account.email
+    scopes = ["cloud-platform"]
+  }
+}
+
+# VM2 - Public subnet instance (accessible from public hosts)
+resource "google_compute_instance" "vm2_public" {
+  name         = "vm2-public-instance"
+  machine_type = "e2-micro" # Free tier eligible
+  zone         = var.zone
+
+  tags = ["ssh-access", "http-access", "public-vm"]
+
+  boot_disk {
+    initialize_params {
+      image = "ubuntu-os-cloud/ubuntu-2204-lts"
+      size  = 20
+      type  = "pd-standard"
+    }
+  }
+
+  network_interface {
+    network    = module.vpc.vpc_id
+    subnetwork = module.vpc.public_subnet_id
+
     access_config {
-      # Ephemeral public IP
+      # Ephemeral public IP (accessible from internet)
     }
   }
 
@@ -166,58 +149,17 @@ resource "google_compute_instance" "app_instance" {
   }
 }
 
-# Cloud Run service for the medical appointments app
-resource "google_cloud_run_service" "medical_appointments" {
-  name     = "medical-appointments-api"
-  location = var.region
+# Cloud Run Module
+module "cloud_run" {
+  source = "./modules/cloud_run"
 
-  template {
-    metadata {
-      annotations = {
-        "autoscaling.knative.dev/maxScale" = "10"
-        "run.googleapis.com/cpu-throttling" = "false"
-      }
-    }
-    
-    spec {
-      containers {
-        image = "gcr.io/${var.project_id}/medical-appointments:latest"
-        
-        ports {
-          container_port = 8080
-        }
-        
-        env {
-          name  = "GOOGLE_CLOUD_PROJECT"
-          value = var.project_id
-        }
-        
-        resources {
-          limits = {
-            cpu    = "1"
-            memory = "512Mi"
-          }
-        }
-      }
-      
-      service_account_name = google_service_account.app_service_account.email
-    }
-  }
+  name                  = "medical-appointments-api"
+  image                 = "gcr.io/${var.project_id}/medical-appointments:latest"
+  region                = var.region
+  project_id            = var.project_id
+  service_account_email = google_service_account.app_service_account.email
 
-  traffic {
-    percent         = 100
-    latest_revision = true
-  }
-
-  depends_on = [google_firestore_database.database]
-}
-
-# Allow unauthenticated access to Cloud Run
-resource "google_cloud_run_service_iam_member" "allow_unauthenticated" {
-  service  = google_cloud_run_service.medical_appointments.name
-  location = google_cloud_run_service.medical_appointments.location
-  role     = "roles/run.invoker"
-  member   = "allUsers"
+  depends_on = [module.firestore]
 }
 
 # Cloud Monitoring notification channel
@@ -234,23 +176,23 @@ resource "google_monitoring_alert_policy" "high_cpu" {
   display_name = "High CPU Usage Alert"
   combiner     = "OR"
   enabled      = true
-  
+
   conditions {
     display_name = "VM Instance - CPU utilization > 80%"
-    
+
     condition_threshold {
-      filter         = "resource.type=\"gce_instance\" AND resource.labels.instance_id=\"${google_compute_instance.app_instance.instance_id}\""
-      comparison     = "COMPARISON_GT"
+      filter          = "resource.type=\"gce_instance\" AND resource.labels.instance_id=\"${google_compute_instance.vm2_public.instance_id}\""
+      comparison      = "COMPARISON_GT"
       threshold_value = 0.8
-      duration       = "300s"
-      
+      duration        = "300s"
+
       aggregations {
         alignment_period   = "300s"
         per_series_aligner = "ALIGN_MEAN"
       }
     }
   }
-  
+
   notification_channels = [google_monitoring_notification_channel.email.id]
 }
 
@@ -259,23 +201,23 @@ resource "google_monitoring_alert_policy" "high_memory" {
   display_name = "High Memory Usage Alert"
   combiner     = "OR"
   enabled      = true
-  
+
   conditions {
     display_name = "VM Instance - Memory utilization > 85%"
-    
+
     condition_threshold {
-      filter         = "resource.type=\"gce_instance\" AND resource.labels.instance_id=\"${google_compute_instance.app_instance.instance_id}\""
-      comparison     = "COMPARISON_GT"
+      filter          = "resource.type=\"gce_instance\" AND resource.labels.instance_id=\"${google_compute_instance.vm2_public.instance_id}\""
+      comparison      = "COMPARISON_GT"
       threshold_value = 0.85
-      duration       = "300s"
-      
+      duration        = "300s"
+
       aggregations {
         alignment_period   = "300s"
         per_series_aligner = "ALIGN_MEAN"
       }
     }
   }
-  
+
   notification_channels = [google_monitoring_notification_channel.email.id]
 }
 
@@ -284,23 +226,23 @@ resource "google_monitoring_alert_policy" "high_disk_io" {
   display_name = "High Disk I/O Alert"
   combiner     = "OR"
   enabled      = true
-  
+
   conditions {
     display_name = "VM Instance - Disk Read Operations > 1000/min"
-    
+
     condition_threshold {
-      filter         = "resource.type=\"gce_instance\" AND resource.labels.instance_id=\"${google_compute_instance.app_instance.instance_id}\""
-      comparison     = "COMPARISON_GT"
+      filter          = "resource.type=\"gce_instance\" AND resource.labels.instance_id=\"${google_compute_instance.vm2_public.instance_id}\""
+      comparison      = "COMPARISON_GT"
       threshold_value = 1000
-      duration       = "300s"
-      
+      duration        = "300s"
+
       aggregations {
         alignment_period   = "60s"
         per_series_aligner = "ALIGN_RATE"
       }
     }
   }
-  
+
   notification_channels = [google_monitoring_notification_channel.email.id]
 }
 
@@ -309,23 +251,23 @@ resource "google_monitoring_alert_policy" "high_network" {
   display_name = "High Network Throughput Alert"
   combiner     = "OR"
   enabled      = true
-  
+
   conditions {
     display_name = "VM Instance - Network sent bytes > 100MB/min"
-    
+
     condition_threshold {
-      filter         = "resource.type=\"gce_instance\" AND resource.labels.instance_id=\"${google_compute_instance.app_instance.instance_id}\""
-      comparison     = "COMPARISON_GT"
-      threshold_value = 104857600  # 100MB in bytes
-      duration       = "300s"
-      
+      filter          = "resource.type=\"gce_instance\" AND resource.labels.instance_id=\"${google_compute_instance.vm2_public.instance_id}\""
+      comparison      = "COMPARISON_GT"
+      threshold_value = 104857600 # 100MB in bytes
+      duration        = "300s"
+
       aggregations {
         alignment_period   = "60s"
         per_series_aligner = "ALIGN_RATE"
       }
     }
   }
-  
+
   notification_channels = [google_monitoring_notification_channel.email.id]
 }
 
@@ -336,7 +278,7 @@ resource "google_monitoring_dashboard" "medical_appointments_dashboard" {
     mosaicLayout = {
       tiles = [
         {
-          width = 6
+          width  = 6
           height = 4
           widget = {
             title = "CPU Utilization"
@@ -344,9 +286,9 @@ resource "google_monitoring_dashboard" "medical_appointments_dashboard" {
               dataSets = [{
                 timeSeriesQuery = {
                   timeSeriesFilter = {
-                    filter = "resource.type=\"gce_instance\" AND resource.labels.instance_id=\"${google_compute_instance.app_instance.instance_id}\""
+                    filter = "resource.type=\"gce_instance\" AND resource.labels.instance_id=\"${google_compute_instance.vm2_public.instance_id}\""
                     aggregation = {
-                      alignmentPeriod = "60s"
+                      alignmentPeriod  = "60s"
                       perSeriesAligner = "ALIGN_MEAN"
                     }
                   }
@@ -356,7 +298,7 @@ resource "google_monitoring_dashboard" "medical_appointments_dashboard" {
           }
         },
         {
-          width = 6
+          width  = 6
           height = 4
           widget = {
             title = "Memory Usage"
@@ -364,9 +306,9 @@ resource "google_monitoring_dashboard" "medical_appointments_dashboard" {
               dataSets = [{
                 timeSeriesQuery = {
                   timeSeriesFilter = {
-                    filter = "resource.type=\"gce_instance\" AND resource.labels.instance_id=\"${google_compute_instance.app_instance.instance_id}\""
+                    filter = "resource.type=\"gce_instance\" AND resource.labels.instance_id=\"${google_compute_instance.vm2_public.instance_id}\""
                     aggregation = {
-                      alignmentPeriod = "60s"
+                      alignmentPeriod  = "60s"
                       perSeriesAligner = "ALIGN_MEAN"
                     }
                   }
@@ -386,8 +328,8 @@ resource "google_cloudbuild_trigger" "app_deployment" {
   description = "Trigger for medical appointments app deployment"
 
   github {
-    owner = "your-github-username" # Change this
-    name  = "your-repo-name"       # Change this
+    owner = "CodeSSRockMan" # Updated to match your GitHub
+    name  = "gcp-IaC-PoC"   # Updated to match your repo
     push {
       branch = "main"
     }
@@ -424,65 +366,4 @@ resource "google_cloudbuild_trigger" "app_deployment" {
       ]
     }
   }
-}
-
-# Webhook trigger for GitHub repository
-resource "google_cloudbuild_trigger" "webhook_deployment" {
-  name        = "medical-appointments-webhook"
-  description = "Webhook trigger for automated medical appointments deployment"
-
-  webhook_config {
-    secret = "your-webhook-secret-key" # Change this to a secure secret
-  }
-
-  build {
-    step {
-      name = "gcr.io/cloud-builders/git"
-      args = ["clone", "https://github.com/your-github-username/your-repo-name.git", "."]
-    }
-
-    step {
-      name = "gcr.io/cloud-builders/docker"
-      args = [
-        "build",
-        "-t", "gcr.io/${var.project_id}/medical-appointments:$BUILD_ID",
-        "-t", "gcr.io/${var.project_id}/medical-appointments:latest",
-        "./apps/medical-appointments"
-      ]
-    }
-
-    step {
-      name = "gcr.io/cloud-builders/docker"
-      args = ["push", "--all-tags", "gcr.io/${var.project_id}/medical-appointments"]
-    }
-
-    step {
-      name = "gcr.io/cloud-builders/gcloud"
-      args = [
-        "run", "deploy", "medical-appointments-api",
-        "--image", "gcr.io/${var.project_id}/medical-appointments:$BUILD_ID",
-        "--region", var.region,
-        "--platform", "managed",
-        "--allow-unauthenticated"
-      ]
-    }
-
-    step {
-      name = "gcr.io/cloud-builders/gcloud"
-      args = [
-        "compute", "instances", "reset", 
-        google_compute_instance.app_instance.name,
-        "--zone", var.zone
-      ]
-    }
-  }
-
-  depends_on = [google_cloud_run_service.medical_appointments]
-}
-
-# Service for easy app replacement
-resource "google_storage_bucket_object" "app_template" {
-  name   = "app-templates/medical-appointments-template.zip"
-  bucket = google_storage_bucket.app_storage.name
-  source = "../apps/medical-appointments/"  # This would be a zip file in real usage
 }

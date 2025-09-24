@@ -1,40 +1,37 @@
-// Cloud Run module: deploys a service with auto-scaling capabilities
-
-resource "google_cloud_run_service" "app" {
+resource "google_cloud_run_service" "service" {
   name     = var.name
   location = var.region
 
   template {
     metadata {
       annotations = {
-        "autoscaling.knative.dev/minScale" = "0"    # Scale to zero when no traffic
-        "autoscaling.knative.dev/maxScale" = "10"   # Maximum 10 instances (free tier friendly)
-        "run.googleapis.com/cpu-throttling" = "true" # Enable CPU throttling for cost efficiency
+        "autoscaling.knative.dev/maxScale"  = "10"
+        "run.googleapis.com/cpu-throttling" = "false"
       }
     }
+
     spec {
-      container_concurrency = 100  # Allow up to 100 concurrent requests per instance
       containers {
         image = var.image
+
+        ports {
+          container_port = 8080
+        }
+
+        env {
+          name  = "GOOGLE_CLOUD_PROJECT"
+          value = var.project_id
+        }
+
         resources {
           limits = {
-            cpu    = "1000m"   // 1 vCPU (free tier limit)
-            memory = "512Mi"   // 512MiB (well within free tier)
+            cpu    = "1"
+            memory = "512Mi"
           }
         }
-        env {
-          name  = "FIRESTORE_PROJECT_ID"
-          value = var.project_id
-        }
-        env {
-          name  = "GCP_PROJECT"
-          value = var.project_id
-        }
-        env {
-          name  = "AUTO_SCALE_ENABLED"
-          value = "true"
-        }
       }
+
+      service_account_name = var.service_account_email
     }
   }
 
@@ -44,13 +41,9 @@ resource "google_cloud_run_service" "app" {
   }
 }
 
-resource "google_cloud_run_service_iam_member" "public_invoker" {
-  service  = google_cloud_run_service.app.name
-  location = google_cloud_run_service.app.location
+resource "google_cloud_run_service_iam_member" "allow_unauthenticated" {
+  service  = google_cloud_run_service.service.name
+  location = google_cloud_run_service.service.location
   role     = "roles/run.invoker"
   member   = "allUsers"
-}
-
-output "url" {
-  value = google_cloud_run_service.app.status[0].url
 }

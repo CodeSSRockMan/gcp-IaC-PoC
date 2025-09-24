@@ -43,3 +43,14 @@ variable "nova_image" {
   description = "Nova compute container image"
   type        = string
 }
+
+variable "zone" {
+  description = "GCP zone"
+  type        = string
+  default     = "us-central1-a"
+}
+
+variable "ssh_key" {
+  description = "SSH public key for instance access"
+  type        = string
+}

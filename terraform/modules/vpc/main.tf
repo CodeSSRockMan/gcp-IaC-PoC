@@ -1,22 +1,25 @@
-// VPC module: creates a VPC and a private subnet for app resources
-
-resource "google_compute_network" "vpc_network" {
+resource "google_compute_network" "vpc" {
   name                    = var.vpc_name
   auto_create_subnetworks = false
-  routing_mode            = "REGIONAL"
+}
+
+resource "google_compute_subnetwork" "public_subnet" {
+  name          = var.public_subnet_name
+  ip_cidr_range = var.public_subnet_cidr
+  region        = var.region
+  network       = google_compute_network.vpc.id
 }
 
 resource "google_compute_subnetwork" "private_subnet" {
-  name                     = var.subnet_name
-  ip_cidr_range            = var.subnet_cidr
-  region                   = var.region
-  network                  = google_compute_network.vpc_network.id
-  private_ip_google_access = true
+  name          = var.private_subnet_name
+  ip_cidr_range = var.private_subnet_cidr
+  region        = var.region
+  network       = google_compute_network.vpc.id
 }
 
 resource "google_compute_firewall" "allow_ssh" {
-  name    = "allow-ssh"
-  network = google_compute_network.vpc_network.name
+  name    = "${var.vpc_name}-allow-ssh"
+  network = google_compute_network.vpc.name
 
   allow {
     protocol = "tcp"
@@ -27,37 +30,68 @@ resource "google_compute_firewall" "allow_ssh" {
   target_tags   = ["ssh-access"]
 }
 
-# Allow only API service to access resources (example: allow HTTP from API subnet)
-resource "google_compute_firewall" "allow_api_to_resource" {
-  name    = "allow-api-to-resource"
-  network = google_compute_network.vpc_network.name
+resource "google_compute_firewall" "allow_http" {
+  name    = "${var.vpc_name}-allow-http"
+  network = google_compute_network.vpc.name
 
   allow {
     protocol = "tcp"
-    ports    = ["80", "443"] # Adjust as needed
+    ports    = ["80", "8080", "5000"]
   }
 
-  source_ranges = [var.api_subnet_cidr] # Pass API subnet CIDR as a variable
-  target_tags   = ["resource-access"]
-}
-
-# Deny all other ingress except SSH and API
-resource "google_compute_firewall" "deny_all_ingress" {
-  name    = "deny-all-ingress"
-  network = google_compute_network.vpc_network.name
-
-  deny {
-    protocol = "all"
-  }
-
-  priority      = 65534
   source_ranges = ["0.0.0.0/0"]
+  target_tags   = ["http-access"]
 }
 
-output "vpc_id" {
-  value = google_compute_network.vpc_network.id
+# Cloud Router for NAT
+resource "google_compute_router" "nat_router" {
+  name    = "${var.vpc_name}-nat-router"
+  region  = var.region
+  network = google_compute_network.vpc.id
 }
 
-output "subnet_id" {
-  value = google_compute_subnetwork.private_subnet.id
+# Cloud NAT for private subnet internet access
+resource "google_compute_router_nat" "nat" {
+  name                               = "${var.vpc_name}-nat"
+  router                             = google_compute_router.nat_router.name
+  region                             = var.region
+  nat_ip_allocate_option             = "AUTO_ONLY"
+  source_subnetwork_ip_ranges_to_nat = "ALL_SUBNETWORKS_ALL_IP_RANGES"
+}
+
+# Firewall rule to allow VM2 (public) to connect to VM1 (private)
+resource "google_compute_firewall" "allow_internal_ssh" {
+  name    = "${var.vpc_name}-allow-internal-ssh"
+  network = google_compute_network.vpc.name
+
+  allow {
+    protocol = "tcp"
+    ports    = ["22"]
+  }
+
+  source_tags = ["public-vm"]
+  target_tags = ["private-vm"]
+}
+
+# Firewall rule to allow internal communication within VPC
+resource "google_compute_firewall" "allow_internal_all" {
+  name    = "${var.vpc_name}-allow-internal-all"
+  network = google_compute_network.vpc.name
+
+  allow {
+    protocol = "tcp"
+    ports    = ["0-65535"]
+  }
+
+  allow {
+    protocol = "udp"
+    ports    = ["0-65535"]
+  }
+
+  allow {
+    protocol = "icmp"
+  }
+
+  source_ranges = ["10.0.0.0/16"]
+  target_tags   = ["private-vm", "public-vm"]
 }
