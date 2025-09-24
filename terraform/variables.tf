@@ -1,6 +1,7 @@
 variable "project_id" {
   description = "GCP Project ID"
   type        = string
+  default     = ""  # Will be overridden by Jenkins TF_VAR_project_id
 }
 
 variable "region" {
@@ -12,6 +13,7 @@ variable "region" {
 variable "billing_account_id" {
   description = "GCP Billing Account ID for budget"
   type        = string
+  default     = ""  # Will be overridden by Jenkins TF_VAR_billing_account_id
 }
 
 variable "cloud_run_name" {
@@ -59,4 +61,5 @@ variable "zone" {
 variable "ssh_key" {
   description = "SSH public key for instance access"
   type        = string
+  default     = ""  # Will be overridden by Jenkins TF_VAR_ssh_key
 }
