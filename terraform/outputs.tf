@@ -37,12 +37,12 @@ output "cloud_run_url" {
 }
 
 output "ssh_command_vm2" {
-  value       = "ssh -i ~/.ssh/id_rsa ubuntu@${google_compute_instance.vm2_public.network_interface[0].access_config[0].nat_ip}"
+  value       = "ssh -i ~/.ssh/gcp_medical_appointments_ed25519 ubuntu@${google_compute_instance.vm2_public.network_interface[0].access_config[0].nat_ip}"
   description = "🔑 SSH command to connect to VM2 (public, directly accessible)"
 }
 
 output "ssh_command_vm1_via_vm2" {
-  value       = "ssh -i ~/.ssh/id_rsa -J ubuntu@${google_compute_instance.vm2_public.network_interface[0].access_config[0].nat_ip} ubuntu@${google_compute_instance.vm1_private.network_interface[0].network_ip}"
+  value       = "ssh -i ~/.ssh/gcp_medical_appointments_ed25519 -J ubuntu@${google_compute_instance.vm2_public.network_interface[0].access_config[0].nat_ip} ubuntu@${google_compute_instance.vm1_private.network_interface[0].network_ip}"
   description = "🔑 SSH command to connect to VM1 via VM2 (bastion/jump host)"
 }
 
@@ -117,8 +117,8 @@ output "quick_access_summary" {
      Language:     http://${google_compute_instance.vm2_public.network_interface[0].access_config[0].nat_ip}/api/lang
   
   🔑 SSH Access: 
-     VM2 (Direct): ssh -i ~/.ssh/id_rsa ubuntu@${google_compute_instance.vm2_public.network_interface[0].access_config[0].nat_ip}
-     VM1 (via VM2): ssh -i ~/.ssh/id_rsa -J ubuntu@${google_compute_instance.vm2_public.network_interface[0].access_config[0].nat_ip} ubuntu@${google_compute_instance.vm1_private.network_interface[0].network_ip}
+     VM2 (Direct): ssh -i ~/.ssh/gcp_medical_appointments_ed25519 ubuntu@${google_compute_instance.vm2_public.network_interface[0].access_config[0].nat_ip}
+     VM1 (via VM2): ssh -i ~/.ssh/gcp_medical_appointments_ed25519 -J ubuntu@${google_compute_instance.vm2_public.network_interface[0].access_config[0].nat_ip} ubuntu@${google_compute_instance.vm1_private.network_interface[0].network_ip}
   
   🚀 Cloud Run URL: 
      ${module.cloud_run.service_url}
@@ -157,7 +157,7 @@ output "acceptance_criteria" {
      - Both VMs are in the same VPC: ${module.vpc.vpc_name}
      - Firewall rules allow internal communication
      - Test connection: SSH to VM2, then connect to VM1 at ${google_compute_instance.vm1_private.network_interface[0].network_ip}
-     - Jump host command: ssh -J ubuntu@${google_compute_instance.vm2_public.network_interface[0].access_config[0].nat_ip} ubuntu@${google_compute_instance.vm1_private.network_interface[0].network_ip}
+     - Jump host command: ssh -i ~/.ssh/gcp_medical_appointments_ed25519 -J ubuntu@${google_compute_instance.vm2_public.network_interface[0].access_config[0].nat_ip} ubuntu@${google_compute_instance.vm1_private.network_interface[0].network_ip}
   
   🌐 Network Architecture:
      VPC: vnet-nebo (10.0.0.0/16)

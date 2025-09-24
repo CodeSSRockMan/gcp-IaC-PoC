@@ -24,7 +24,7 @@ echo ""
 # Test 1: VM1 should NOT be accessible from public internet
 echo "🧪 TEST 1: VM1 should NOT be accessible from public internet"
 echo "   Trying to SSH to VM1 directly (this should fail)..."
-timeout 10 ssh -o ConnectTimeout=5 -o BatchMode=yes -i ~/.ssh/id_rsa ubuntu@$VM1_INTERNAL_IP echo "Connected" 2>/dev/null
+timeout 10 ssh -o ConnectTimeout=5 -o BatchMode=yes -i ~/.ssh/gcp_medical_appointments_ed25519 ubuntu@$VM1_INTERNAL_IP echo "Connected" 2>/dev/null
 if [ $? -ne 0 ]; then
     echo "   ✅ PASS: VM1 is not accessible from public internet (as expected)"
 else
@@ -35,7 +35,7 @@ echo ""
 # Test 2: VM2 should be accessible from public internet
 echo "🧪 TEST 2: VM2 should be accessible from public internet"
 echo "   Trying to SSH to VM2 directly..."
-timeout 10 ssh -o ConnectTimeout=5 -o BatchMode=yes -i ~/.ssh/id_rsa ubuntu@$VM2_EXTERNAL_IP echo "Connected" 2>/dev/null
+timeout 10 ssh -o ConnectTimeout=5 -o BatchMode=yes -i ~/.ssh/gcp_medical_appointments_ed25519 ubuntu@$VM2_EXTERNAL_IP echo "Connected" 2>/dev/null
 if [ $? -eq 0 ]; then
     echo "   ✅ PASS: VM2 is accessible from public internet"
 else
@@ -64,8 +64,8 @@ echo "   • VM2 can connect to VM1: Internal VPC communication enabled"
 echo ""
 
 echo "📝 MANUAL VERIFICATION COMMANDS:"
-echo "   SSH to VM2: ssh -i ~/.ssh/id_rsa ubuntu@$VM2_EXTERNAL_IP"
-echo "   SSH to VM1 via VM2: ssh -i ~/.ssh/id_rsa -J ubuntu@$VM2_EXTERNAL_IP ubuntu@$VM1_INTERNAL_IP"
+echo "   SSH to VM2: ssh -i ~/.ssh/gcp_medical_appointments_ed25519 ubuntu@$VM2_EXTERNAL_IP"
+echo "   SSH to VM1 via VM2: ssh -i ~/.ssh/gcp_medical_appointments_ed25519 -J ubuntu@$VM2_EXTERNAL_IP ubuntu@$VM1_INTERNAL_IP"
 echo ""
 echo "🌐 Infrastructure URLs:"
 terraform output -raw quick_access_summary 2>/dev/null || echo "   (Run 'terraform output quick_access_summary' for detailed URLs)"
