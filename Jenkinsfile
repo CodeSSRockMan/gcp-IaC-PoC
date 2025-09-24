@@ -6,13 +6,13 @@ pipeline {
         // GCP Credentials
         GOOGLE_APPLICATION_CREDENTIALS = credentials('gcp-sa-key')
         
-        // Project Configuration
-        TF_VAR_project_id = 'peaceful-oath-470112-e8'
-        TF_VAR_billing_account_id = '01F913-84297C-824CD2'
-        TF_VAR_region = 'us-central1'
+        // Project Configuration  
+        TF_VAR_project_id = credentials('GCP_PROJECT_ID')
+        TF_VAR_billing_account_id = credentials('GCP_BILLING_ACCOUNT')  
+        TF_VAR_region = credentials('GCP_REGION')
         TF_VAR_zone = 'us-central1-a'
         
-        // Application Configuration
+        // Application Configuration (using simple defaults)
         TF_VAR_cloud_run_name = 'medical-appointments-api'
         TF_VAR_cloud_run_image = 'gcr.io/peaceful-oath-470112-e8/medical-appointments:latest'
         TF_VAR_entry_image = 'gcr.io/peaceful-oath-470112-e8/entry-service:latest'
