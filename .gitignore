@@ -7,3 +7,4 @@ terraform.tfvars
 *.pem
 *.key
 *.env
+.DS_Store
